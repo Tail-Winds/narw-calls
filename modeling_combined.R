@@ -1119,9 +1119,7 @@ pdp_CallChar <- pdp_CallChar %>%
     mutate(predictor = gsub("TimeSinceLVP", "TimeSinceLVP (hours)", predictor)) %>%
     mutate(predictor = gsub("SPLcalling", "SPLcalling (dB)", predictor)) %>%
     mutate(predictor = gsub("SPLvessel", "SPLvessel (dB)", predictor)) %>%
-    # mutate(response = gsub("Duration", "Duration (s)", response)) %>%
-    # mutate(response = gsub("Duration90", "Duration90 (s)", response)) %>%
-    mutate(predictor = if_else(grepl("Duration", response),
+    mutate(response = if_else(grepl("Duration", response),
                                paste0(response, " (s)"),
                                response)) %>%
     mutate(response = gsub("FreqDelta", "FreqDelta (Hz)", response)) %>%
