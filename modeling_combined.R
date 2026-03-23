@@ -45,7 +45,7 @@ library(olsrr)
 library(randomForest)
 # library(ranger)
 
-NTREE <- 500
+NTREE <- 1000
 MTRY <- 2
 NSIZE <- 5
 
@@ -150,7 +150,9 @@ summary(D)
 D %>%
     ggplot(aes(x = ICI / 60)) +
     geom_histogram(aes(y = ..count..), fill = "blue", alpha = 0.5, color = NA) +
-    scale_x_log10() +
+    # scale_x_log10() +
+    scale_x_log10(labels = scalar_labels <- function(x) format(x, scientific = FALSE, drop0trailing = TRUE) %>% trimws(),
+                  breaks = c(0.01, 0.1, 1, 10, 100, 1000, 10000, 100000)) +
     labs(x = "Inter-call interval (minutes)",
          y = "Frequency")
 ggsave("images/ICI_hist.png", width = 6, height = 4, dpi = 600)
@@ -456,7 +458,17 @@ ggplot(pdp_BoutDur, aes(x = x, y = yhat)) +
     geom_line() +
     facet_wrap(~predictor, scales = "free_x", nrow = 1) +
     labs(x = "Predictor values",
-         y = expression(log[10] * "(Bout duration [minutes])"))
+         y = expression(log[10] * "(Bout duration [minutes])")) +
+    geom_rug(data = DB %>%
+                 pivot_longer(cols = all_of(PREDICTORS_cycle),
+                              names_to = "predictor",
+                              values_to = "x") %>%
+                 mutate(yhat = mean(DB$BoutDur_mins_log10, na.rm = TRUE)),
+             sides = "b", alpha = 0.3) +
+    theme(
+        strip.text = element_text(color = "black", face = "bold"),
+        strip.background = element_rect(fill = "white")
+    )
 ggsave("images/pdp_BoutDur.png", width = 9, height = 2.5, dpi = 600)
 
 
@@ -757,7 +769,7 @@ p2 <- DC %>%
     ggplot(aes(x = CallRate)) +
     geom_histogram(fill = "blue", alpha = 0.5, color = NA) +
     scale_x_log10() +
-    labs(x = "Call rate (number of calls)",
+    labs(x = "Call rate (number of calls per hour)",
          y = "Frequency")
 p1 + p2 +
     plot_annotation(tag_levels = "A")
@@ -795,7 +807,7 @@ p1 <- DC %>%
     ggplot(aes(x = SPLcalling, y = CallRate)) +
     geom_point() +
     scale_y_log10() +
-    labs(y = "Call rate (number of calls)",
+    labs(y = "Call rate (number of calls per hour)",
          x = "SPL of calling period (dB)")
 p2 <- DB %>%
     ggplot(aes(x = SPLcalling, y = BoutDur_mins)) +
@@ -879,7 +891,17 @@ ggplot(pdp_CallRate, aes(x = x, y = yhat)) +
     geom_line() +
     facet_wrap(~predictor, scales = "free_x", nrow = 1) +
     labs(x = "Predictor values",
-         y = expression(log[10] * "(Number of calls per hour)"))
+         y = expression(log[10] * "(Number of calls per hour)")) +
+    geom_rug(data = DC %>%
+                 pivot_longer(cols = all_of(PREDICTORS_cycle),
+                                        names_to = "predictor",
+                                        values_to = "x") %>%
+                 mutate(yhat = mean(DC$CallRate_log10, na.rm = TRUE)),
+             sides = "b", alpha = 0.3) +
+    theme(
+        strip.text = element_text(color = "black", face = "bold"),
+        strip.background = element_rect(fill = "white")
+    )
 ggsave("images/pdp_CallRate.png", width = 9, height = 2.5, dpi = 600)
 
 
@@ -1132,9 +1154,32 @@ pdp_CallChar %>%
     dplyr::filter(predictor %in% c("TimeSinceLVP (hours)", "SPLcalling (dB)", "SPLvessel (dB)")) %>%
     ggplot(aes(x = x, y = yhat)) +
     geom_line() +
+    # Add rug plot only for the data where response is the bottom level
+    # geom_rug(data = . %>% dplyr::filter(response == "FreqMin (Hz)"),
+    #          sides = "b", alpha = 0.3) +
+    # Use the original data for the rug plot
+    geom_rug(data = tibble(response = "FreqMin (Hz)",
+                           predictor = "SPLcalling (dB)",
+                           yhat = mean(D$FreqMin, na.rm = TRUE),
+                           x = D$SPLcalling),
+             sides = "b", alpha = 0.3) +
+    geom_rug(data = tibble(response = "FreqMin (Hz)",
+                           predictor = "SPLvessel (dB)",
+                           yhat = mean(D$FreqMin, na.rm = TRUE),
+                           x = D$SPLvessel),
+             sides = "b", alpha = 0.3) +
+    geom_rug(data = tibble(response = "FreqMin (Hz)",
+                           predictor = "TimeSinceLVP (hours)",
+                           yhat = mean(D$FreqMin, na.rm = TRUE),
+                           x = D$TimeSinceLVP),
+             sides = "b", alpha = 0.3) +
     facet_grid(response ~ predictor, scales = "free") +
     labs(x = "Predictor values",
-         y = "Response values")
+         y = "Response values") +
+    theme(
+        strip.text = element_text(color = "black", face = "bold"),
+        strip.background = element_rect(fill = "white")
+    )
 ggsave("images/pdp_CallChar1.png", width = 9, height = 8, dpi = 600)
 
 
@@ -1142,9 +1187,36 @@ pdp_CallChar %>%
     dplyr::filter(predictor %!in% c("TimeSinceLVP (hours)", "SPLcalling (dB)", "SPLvessel (dB)")) %>%
     ggplot(aes(x = x, y = yhat)) +
     geom_line() +
+    # Add rug plot only for the data where response is the bottom level
+    # geom_rug(data = . %>% dplyr::filter(response == "FreqMin (Hz)"),
+    #          sides = "b", alpha = 0.3) +
+    geom_rug(data = tibble(response = "FreqMin (Hz)",
+                           predictor = "DoYcos",
+                           yhat = mean(D$FreqMin, na.rm = TRUE),
+                           x = D$DoYcos),
+             sides = "b", alpha = 0.3) +
+    geom_rug(data = tibble(response = "FreqMin (Hz)",
+                           predictor = "DoYsin",
+                           yhat = mean(D$FreqMin, na.rm = TRUE),
+                           x = D$DoYsin),
+             sides = "b", alpha = 0.3) +
+    geom_rug(data = tibble(response = "FreqMin (Hz)",
+                           predictor = "Hourcos",
+                           yhat = mean(D$FreqMin, na.rm = TRUE),
+                           x = D$Hourcos),
+             sides = "b", alpha = 0.3) +
+    geom_rug(data = tibble(response = "FreqMin (Hz)",
+                           predictor = "Hoursin",
+                           yhat = mean(D$FreqMin, na.rm = TRUE),
+                           x = D$Hoursin),
+             sides = "b", alpha = 0.3) +
     facet_grid(response ~ predictor, scales = "free") +
     labs(x = "Predictor values",
-         y = "Response values")
+         y = "Response values") +
+    theme(
+        strip.text = element_text(color = "black", face = "bold"),
+        strip.background = element_rect(fill = "white")
+    )
 ggsave("images/pdp_CallChar2.png", width = 9, height = 8, dpi = 600)
 
 
@@ -1159,3 +1231,4 @@ citation(package = "flexmix")
 citation(package = "nlme")
 citation(package = "randomForestSRC", auto = TRUE)
 citation(package = "randomForest", auto = TRUE)
+citation(package = "suncalc", auto = TRUE)
