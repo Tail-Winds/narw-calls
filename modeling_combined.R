@@ -119,13 +119,14 @@ D <- readxl::read_xlsx("./data/NARWData_2024-07-29.xlsx",
     # rename some variables
     rename(Duration = DeltaTime,
            Duration90 = Dur90,
-           SPLvessel = SPL_VesselPassage,
+           SPLPriorVessel = SPL_VesselPassage,
            SPLcalling = SPL_CallingPeriod,
            TimeSinceLVP = TimeSinceLastVP) %>%
     # sort chronologically
     arrange(Time_NYC) %>%
     # calculate inter-call intervals
-    mutate(ICI = c(NA, as.numeric(difftime(Time_NYC[-1], Time_NYC[-length(Time_NYC)], units = "secs")))) %>%
+    mutate(ICI = c(NA, as.numeric(difftime(Time_NYC[-1], Time_NYC[-length(Time_NYC)],
+                                           units = "secs")))) %>%
     # year of deployment
     mutate(YearDeployment = case_when(
         Date < BuoyReplacement ~ "Year 1",
@@ -151,7 +152,8 @@ D %>%
     ggplot(aes(x = ICI / 60)) +
     geom_histogram(aes(y = ..count..), fill = "blue", alpha = 0.5, color = NA) +
     # scale_x_log10() +
-    scale_x_log10(labels = scalar_labels <- function(x) format(x, scientific = FALSE, drop0trailing = TRUE) %>% trimws(),
+    scale_x_log10(labels = scalar_labels <- function(x)
+        format(x, scientific = FALSE, drop0trailing = TRUE) %>% trimws(),
                   breaks = c(0.01, 0.1, 1, 10, 100, 1000, 10000, 100000)) +
     labs(x = "Inter-call interval (minutes)",
          y = "Frequency")
@@ -225,7 +227,7 @@ DB0 <- D %>%
               Time_NYC = Time_NYC[1],
               TimeSinceLVP = TimeSinceLVP[1],
               SPLcalling = mean(SPLcalling),
-              SPLvessel = mean(SPLvessel),
+              SPLPriorVessel = mean(SPLPriorVessel),
 
               FreqMin_first = FreqMin[1],
               FreqMin_last = tail(FreqMin, 1),
@@ -353,14 +355,14 @@ RESPONSES <- c("BoutDur_mins_log10")
 
 # PREDICTORS <- c("TimeSinceLVP"
 #                 ,"SPLcalling"
-#                 ,"SPLvessel"
+#                 ,"SPLPriorVessel"
 #                 ,"DoY"
 #                 ,"HourDecimal"
 # )
 
 PREDICTORS_cycle <- c("TimeSinceLVP"
                       ,"SPLcalling"
-                      ,"SPLvessel"
+                      ,"SPLPriorVessel"
                       ,"DoYcos", "DoYsin"
                       ,"Hoursin", "Hourcos"
 )
@@ -420,7 +422,7 @@ plot(m_LR_BoutDur$model)
 
 
 with(DB,
-     cor.test(SPLvessel, SPLcalling)
+     cor.test(SPLPriorVessel, SPLcalling)
      )
 
 
@@ -434,6 +436,29 @@ M_RF_BoutDur <- randomForest(fml
                              ,data = DB)
 M_RF_BoutDur
 plot(M_RF_BoutDur)
+
+# ACF of residuals
+residuals_boutdur <- DB$BoutDur_mins_log10 - M_RF_BoutDur$predicted
+acf_obj_boutdur <- acf(residuals_boutdur, plot = FALSE, na.action = na.pass)
+acf_df_boutdur <- data.frame(
+    lag = acf_obj_boutdur$lag,
+    acf = acf_obj_boutdur$acf
+)
+conf_lim_boutdur <- qnorm((1 + 0.95)/2) / sqrt(acf_obj_boutdur$n.used)
+
+p_acf_boutdur <- ggplot(data = acf_df_boutdur, aes(x = lag, y = acf)) +
+    geom_segment(aes(xend = lag, yend = 0)) +
+    geom_hline(yintercept = c(conf_lim_boutdur, -conf_lim_boutdur),
+               linetype = "dashed", color = "blue") +
+    geom_hline(yintercept = 0) +
+    labs(
+        x = "Lag",
+        y = "Autocorrelation"
+    ) +
+    theme_bw()
+print(p_acf_boutdur)
+ggsave("images/ACF_M_RF_BoutDur.png", plot = p_acf_boutdur,
+       width = 6, height = 4, dpi = 600)
 
 importance_values <- M_RF_BoutDur$importance[,1]
 importance_df <- tibble(Variable = names(importance_values),
@@ -739,7 +764,7 @@ DC <- D %>%
               HourDecimal = mean(HourDecimal, na.rm = TRUE),
               TimeSinceLVP = mean(TimeSinceLVP),
               SPLcalling = mean(SPLcalling),
-              SPLvessel = mean(SPLvessel),
+              SPLPriorVessel = mean(SPLPriorVessel),
               DoYcos = mean(DoYcos),
               DoYsin = mean(DoYsin),
               Hoursin = mean(Hoursin),
@@ -816,11 +841,11 @@ p2 <- DB %>%
     labs(y = "Bout duration (minutes)",
          x = "SPL of calling period (dB)")
 p3 <- DB %>%
-    ggplot(aes(x = SPLvessel, y = BoutDur_mins)) +
+    ggplot(aes(x = SPLPriorVessel, y = BoutDur_mins)) +
     geom_point() +
     scale_y_log10() +
     labs(y = "Bout duration (minutes)",
-         x = "SPL of vessel passage (dB)")
+         x = "SPL of prior vessel passage (dB)")
 p1 + p2 + p3 +
     plot_annotation(tag_levels = "A")
 ggsave("images/CallRateBout.png", width = 8, height = 3, dpi = 600)
@@ -867,6 +892,30 @@ M_RF_CallRate <- randomForest(fml
                               ,data = DC)
 M_RF_CallRate
 plot(M_RF_CallRate)
+
+# ACF of residuals
+residuals_callrate <- DC$CallRate_log10 - M_RF_CallRate$predicted
+acf_obj_callrate <- acf(residuals_callrate, plot = FALSE, na.action = na.pass)
+acf_df_callrate <- data.frame(
+    lag = acf_obj_callrate$lag,
+    acf = acf_obj_callrate$acf
+)
+conf_lim_callrate <- qnorm((1 + 0.95)/2) / sqrt(acf_obj_callrate$n.used)
+
+p_acf_callrate <- ggplot(data = acf_df_callrate, aes(x = lag, y = acf)) +
+    geom_segment(aes(xend = lag, yend = 0)) +
+    geom_hline(yintercept = c(conf_lim_callrate, -conf_lim_callrate),
+               linetype = "dashed", color = "blue") +
+    geom_hline(yintercept = 0) +
+    labs(
+        x = "Lag",
+        y = "Autocorrelation"
+    ) +
+    theme_bw()
+print(p_acf_callrate)
+ggsave("images/ACF_M_RF_CallRate.png",
+       plot = p_acf_callrate,
+       width = 6, height = 4, dpi = 600)
 
 importance_values <- M_RF_CallRate$importance[,1]
 importance_df <- tibble(Variable = names(importance_values),
@@ -1087,6 +1136,34 @@ invisible(
     sapply(RESPONSES, function(i) plot(mult_mod_rf, m.target = i))
 )
 
+# ACF of residuals for each response
+for (y in RESPONSES) { # y = RESPONSES[1]
+    residuals_y <- mult_mod_rf$yvar[, y] - mult_mod_rf$regrOutput[[y]]$predicted
+    acf_obj_y <- acf(residuals_y, plot = FALSE, na.action = na.pass)
+
+    acf_df_y <- data.frame(
+        lag = acf_obj_y$lag,
+        acf = acf_obj_y$acf
+    )
+    conf_lim_y <- qnorm((1 + 0.95)/2) / sqrt(acf_obj_y$n.used)
+
+    p_acf_y <- ggplot(data = acf_df_y, aes(x = lag, y = acf)) +
+        geom_segment(aes(xend = lag, yend = 0)) +
+        geom_hline(yintercept = c(conf_lim_y, -conf_lim_y),
+                   linetype = "dashed", color = "blue") +
+        geom_hline(yintercept = 0) +
+        labs(
+            x = "Lag",
+            y = "Autocorrelation"
+        ) +
+        theme_bw()
+
+    print(p_acf_y)
+    ggsave(paste0("images/ACF_mult_mod_rf_", y, ".png"),
+           plot = p_acf_y,
+           width = 6, height = 4, dpi = 600)
+}
+
 # Extract standardized variable importance
 svimp <- get.mv.vimp(mult_mod_rf, standardize = TRUE) %>%
     t() %>%
@@ -1140,7 +1217,7 @@ pdp_CallChar <- lapply(PREDICTORS_cycle, function(i) { # i = "TimeSinceLVP"
 pdp_CallChar <- pdp_CallChar %>%
     mutate(predictor = gsub("TimeSinceLVP", "TimeSinceLVP (hours)", predictor)) %>%
     mutate(predictor = gsub("SPLcalling", "SPLcalling (dB)", predictor)) %>%
-    mutate(predictor = gsub("SPLvessel", "SPLvessel (dB)", predictor)) %>%
+    mutate(predictor = gsub("SPLPriorVessel", "SPLPriorVessel (dB)", predictor)) %>%
     mutate(response = if_else(grepl("Duration", response),
                                paste0(response, " (s)"),
                                response)) %>%
@@ -1151,7 +1228,7 @@ pdp_CallChar <- pdp_CallChar %>%
 
 # Plot PDPs with fixed y-axes
 pdp_CallChar %>%
-    dplyr::filter(predictor %in% c("TimeSinceLVP (hours)", "SPLcalling (dB)", "SPLvessel (dB)")) %>%
+    dplyr::filter(predictor %in% c("TimeSinceLVP (hours)", "SPLcalling (dB)", "SPLPriorVessel (dB)")) %>%
     ggplot(aes(x = x, y = yhat)) +
     geom_line() +
     # Add rug plot only for the data where response is the bottom level
@@ -1164,9 +1241,9 @@ pdp_CallChar %>%
                            x = D$SPLcalling),
              sides = "b", alpha = 0.3) +
     geom_rug(data = tibble(response = "FreqMin (Hz)",
-                           predictor = "SPLvessel (dB)",
+                           predictor = "SPLPriorVessel (dB)",
                            yhat = mean(D$FreqMin, na.rm = TRUE),
-                           x = D$SPLvessel),
+                           x = D$SPLPriorVessel),
              sides = "b", alpha = 0.3) +
     geom_rug(data = tibble(response = "FreqMin (Hz)",
                            predictor = "TimeSinceLVP (hours)",
@@ -1184,7 +1261,7 @@ ggsave("images/pdp_CallChar1.png", width = 9, height = 8, dpi = 600)
 
 
 pdp_CallChar %>%
-    dplyr::filter(predictor %!in% c("TimeSinceLVP (hours)", "SPLcalling (dB)", "SPLvessel (dB)")) %>%
+    dplyr::filter(predictor %!in% c("TimeSinceLVP (hours)", "SPLcalling (dB)", "SPLPriorVessel (dB)")) %>%
     ggplot(aes(x = x, y = yhat)) +
     geom_line() +
     # Add rug plot only for the data where response is the bottom level
